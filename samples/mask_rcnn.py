@@ -1,20 +1,20 @@
+import json
 import os
 import sys
-import random
-import math
 import numpy as np
-import skimage.io
-import matplotlib
-import matplotlib.pyplot as plt
+import cv2
+import glob
 
 # Root directory of the project
+from mrcnn.visualize import random_colors, apply_mask
+
 ROOT_DIR = os.path.abspath("../")
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
 import mrcnn.model as modellib
-from mrcnn import visualize
+
 # Import COCO config
 sys.path.append(os.path.join(ROOT_DIR, "samples/coco/"))  # To find local version
 import coco
@@ -67,14 +67,134 @@ class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
                'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors',
                'teddy bear', 'hair drier', 'toothbrush']
 
-# Load a random image from the images folder
-file_names = next(os.walk(IMAGE_DIR))[2]
-image = skimage.io.imread(os.path.join(IMAGE_DIR, random.choice(file_names)))
 
-# Run detection
-results = model.detect([image], verbose=1)
+def display_instances(image, boxes, masks, ids, names, scores):
+    """
+        take the image and results and apply the mask, box, and Label
+    """
+    n_instances = boxes.shape[0]
+    colors = random_colors(n_instances)
+    resultsForJSON = []
 
-# Visualize results
-r = results[0]
-visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
-                            class_names, r['scores'])
+    if not n_instances:
+        print('NO INSTANCES TO DISPLAY')
+    else:
+        assert boxes.shape[0] == masks.shape[-1] == ids.shape[0]
+
+    for i, color in enumerate(colors):
+        if not np.any(boxes[i]):
+            continue
+
+        y1, x1, y2, x2 = boxes[i]
+        label = names[ids[i]]
+
+        score = scores[i] if scores is not None else None
+
+        caption = '{} {:.2f}'.format(label, score) if score else label
+
+        mask = masks[:, :, i]
+
+        image = apply_mask(image, mask, color)
+        image = cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+        image = cv2.putText(
+            image, caption, (x1, y1), cv2.FONT_HERSHEY_COMPLEX, 0.7, color, 2
+        )
+
+        resultsForJSON.append(
+            {"label": label, "confidence": float('%.2f' % score), "topleft": {"x": int(x1), "y": int(y1)},
+             "bottomright": {"x": int(x2), "y": int(y2)}})
+
+    return image, json.dumps(resultsForJSON)
+
+def saveLabels(elapsed, json):
+    with open(JSON_SAVE_DIR + '/frame_' + str(elapsed-1) + '.json', 'w+') as f:
+        f.write(json)
+
+def make_video(outvid, images=None, fps=30, size=None,
+               is_color=True, format="FMP4"):
+    """
+    Create a video from a list of images.
+
+    @param      outvid      output video
+    @param      images      list of images to use in the video
+    @param      fps         frame per second
+    @param      size        size of each frame
+    @param      is_color    color
+    @param      format      see http://www.fourcc.org/codecs.php
+    @return                 see http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
+
+    The function relies on http://opencv-python-tutroals.readthedocs.org/en/latest/.
+    By default, the video will have the size of the first image.
+    It will resize every image to this size before adding them to the video.
+    """
+
+    fourcc = cv2.VideoWriter_fourcc(*format)
+    vid = None
+    for image in images:
+        if not os.path.exists(image):
+            raise FileNotFoundError(image)
+        img = cv2.imread(image)
+        if vid is None:
+            if size is None:
+                size = img.shape[1], img.shape[0]
+            vid = cv2.VideoWriter(outvid, fourcc, float(fps), size, is_color)
+        if size[0] != img.shape[1] and size[1] != img.shape[0]:
+            img = cv2.resize(img, size)
+        vid.write(img)
+    vid.release()
+    return vid
+
+
+VIDEO_SAVE_DIR = 'out'
+JSON_SAVE_DIR = VIDEO_SAVE_DIR +'/data'
+batch_size = 1
+capture = cv2.VideoCapture('traffic_3sec.mp4')
+try:
+    if not os.path.exists(VIDEO_SAVE_DIR):
+        os.makedirs(VIDEO_SAVE_DIR)
+except OSError:
+    print('Error: Creating directory of data')
+frames = []
+frame_count = 0
+# these 2 lines can be removed if you dont have a 1080p camera.
+capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
+capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+fps = capture.get(cv2.CAP_PROP_FPS)
+
+while True:
+    ret, frame = capture.read()
+    # Bail out when the video file ends
+    if not ret:
+        break
+
+    # Save each frame of the video to a list
+    frame_count += 1
+    frames.append(frame)
+    print('frame_count :{0}'.format(frame_count))
+    if len(frames) == batch_size:
+        results = model.detect(frames, verbose=0)
+        print('Predicted')
+        for i, item in enumerate(zip(frames, results)):
+            frame = item[0]
+            r = item[1]
+            frame, jsonContent = display_instances(
+                frame, r['rois'], r['masks'], r['class_ids'], class_names, r['scores']
+            )
+            saveLabels(frame_count, jsonContent)
+            name = 'frame_{0}.jpg'.format(frame_count + i - batch_size)
+            name = os.path.join(VIDEO_SAVE_DIR, name)
+            cv2.imwrite(name, frame)
+            print('writing to file:{0}'.format(name))
+        # Clear the frames array to start the next batch
+        frames = []
+
+capture.release()
+
+# Directory of images to run detection on
+
+images = list(glob.iglob(os.path.join(VIDEO_SAVE_DIR, '*.*')))
+# Sort the images by integer index
+images = sorted(images, key=lambda x: float(os.path.split(x)[1][:-3]))
+
+outvid = os.path.join('', "out.mp4")
+make_video(outvid, images, fps=fps)
