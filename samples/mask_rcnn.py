@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import time
+
 import numpy as np
 import cv2
 import glob
@@ -107,8 +109,15 @@ def display_instances(image, boxes, masks, ids, names, scores):
     return image, json.dumps(resultsForJSON)
 
 def saveLabels(elapsed, json):
-    with open(JSON_SAVE_DIR + '/frame_' + str(elapsed-1) + '.json', 'w+') as f:
+    with open(JSON_SAVE_DIR + '/frame' + str(elapsed-1) + '.json', 'w+') as f:
         f.write(json)
+
+def saveTime(endTime):
+    data = {}
+    data['time'] = []
+    data['time'].append({'time': endTime})
+    with open(JSON_SAVE_DIR + '/time' + '.json', 'w+') as f:
+            json.dump(data['time'], f)
 
 def make_video(outvid, images=None, fps=30, size=None,
                is_color=True, format="FMP4"):
@@ -161,6 +170,7 @@ capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
 capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 fps = capture.get(cv2.CAP_PROP_FPS)
 
+start = time.time()
 while True:
     ret, frame = capture.read()
     # Bail out when the video file ends
@@ -181,7 +191,7 @@ while True:
                 frame, r['rois'], r['masks'], r['class_ids'], class_names, r['scores']
             )
             saveLabels(frame_count, jsonContent)
-            name = 'frame_{0}.jpg'.format(frame_count + i - batch_size)
+            name = 'frame{0}.jpg'.format(frame_count + i - batch_size)
             name = os.path.join(VIDEO_SAVE_DIR, name)
             cv2.imwrite(name, frame)
             print('writing to file:{0}'.format(name))
@@ -189,7 +199,8 @@ while True:
         frames = []
 
 capture.release()
-
+endTime = time.time() - start
+saveTime(endTime)
 # Directory of images to run detection on
 
 images = list(glob.iglob(os.path.join(VIDEO_SAVE_DIR, '*.*')))
