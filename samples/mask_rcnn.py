@@ -35,11 +35,13 @@ if not os.path.exists(COCO_MODEL_PATH):
 # Directory of images to run detection on
 IMAGE_DIR = os.path.join(ROOT_DIR, "images")
 
+
 class InferenceConfig(coco.CocoConfig):
     # Set batch size to 1 since we'll be running inference on
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
+
 
 config = InferenceConfig()
 config.display()
@@ -96,7 +98,7 @@ def display_instances(image, boxes, masks, ids, names, scores):
 
         mask = masks[:, :, i]
 
-        image = apply_mask(image, mask, color)
+        # image = apply_mask(image, mask, color)
         image = cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
         image = cv2.putText(
             image, caption, (x1, y1), cv2.FONT_HERSHEY_COMPLEX, 0.7, color, 2
@@ -108,16 +110,24 @@ def display_instances(image, boxes, masks, ids, names, scores):
 
     return image, json.dumps(resultsForJSON)
 
+
 def saveLabels(elapsed, json):
-    with open(JSON_SAVE_DIR + '/frame' + str(elapsed-1) + '.json', 'w+') as f:
+    if not os.path.exists(JSON_SAVE_DIR):
+        os.makedirs(JSON_SAVE_DIR)
+    with open(JSON_SAVE_DIR + '/frame' + str(elapsed - 1) + '.json', 'w+') as f:
         f.write(json)
+
 
 def saveTime(endTime):
     data = {}
     data['time'] = []
     data['time'].append({'time': endTime})
-    with open(JSON_SAVE_DIR + '/time' + '.json', 'w+') as f:
-            json.dump(data['time'], f)
+
+    if not os.path.exists(TIME_PATH):
+        os.makedirs(TIME_PATH)
+    with open(TIME_PATH + '/time' + '.json', 'w+') as f:
+        json.dump(data['time'], f)
+
 
 def make_video(outvid, images=None, fps=30, size=None,
                is_color=True, format="FMP4"):
@@ -154,10 +164,14 @@ def make_video(outvid, images=None, fps=30, size=None,
     return vid
 
 
-VIDEO_SAVE_DIR = 'out'
-JSON_SAVE_DIR = VIDEO_SAVE_DIR +'/data'
+TRAFFIC = 'traffic'
+NIGHT_STREET = 'night_street'
+VIDEO_NAME = NIGHT_STREET
+VIDEO_SAVE_DIR = 'out' + '/' + VIDEO_NAME
+JSON_SAVE_DIR = VIDEO_SAVE_DIR + '/frames'
+TIME_PATH = VIDEO_SAVE_DIR + '/time'
 batch_size = 1
-capture = cv2.VideoCapture('traffic_3sec.mp4')
+capture = cv2.VideoCapture(VIDEO_NAME + '.avi')
 try:
     if not os.path.exists(VIDEO_SAVE_DIR):
         os.makedirs(VIDEO_SAVE_DIR)
