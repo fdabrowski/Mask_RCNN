@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -112,9 +113,9 @@ def display_instances(image, boxes, masks, ids, names, scores):
 
 
 def saveLabels(elapsed, json):
-    if not os.path.exists(JSON_SAVE_DIR):
-        os.makedirs(JSON_SAVE_DIR)
-    with open(JSON_SAVE_DIR + '/frame' + str(elapsed - 1) + '.json', 'w+') as f:
+    if not os.path.exists(json_save_dir):
+        os.makedirs(json_save_dir)
+    with open(json_save_dir + '/frame' + str(elapsed - 1) + '.json', 'w+') as f:
         f.write(json)
 
 
@@ -123,9 +124,9 @@ def saveTime(endTime):
     data['time'] = []
     data['time'].append({'time': endTime})
 
-    if not os.path.exists(TIME_PATH):
-        os.makedirs(TIME_PATH)
-    with open(TIME_PATH + '/time' + '.json', 'w+') as f:
+    if not os.path.exists(time_path):
+        os.makedirs(time_path)
+    with open(time_path + '/time' + '.json', 'w+') as f:
         json.dump(data['time'], f)
 
 
@@ -164,62 +165,73 @@ def make_video(outvid, images=None, fps=30, size=None,
     return vid
 
 
-TRAFFIC = 'traffic'
-NIGHT_STREET = 'night_street'
-VIDEO_NAME = NIGHT_STREET
-VIDEO_SAVE_DIR = 'out' + '/' + VIDEO_NAME
-JSON_SAVE_DIR = VIDEO_SAVE_DIR + '/frames'
-TIME_PATH = VIDEO_SAVE_DIR + '/time'
-batch_size = 1
-capture = cv2.VideoCapture(VIDEO_NAME + '.avi')
-try:
-    if not os.path.exists(VIDEO_SAVE_DIR):
-        os.makedirs(VIDEO_SAVE_DIR)
-except OSError:
-    print('Error: Creating directory of data')
-frames = []
-frame_count = 0
-# these 2 lines can be removed if you dont have a 1080p camera.
-capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
-capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-fps = capture.get(cv2.CAP_PROP_FPS)
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_name", help="Set video name", type=str)
+    parser.add_argument("format", help="Set video format", type=str)
+    args = parser.parse_args()
+    return args
 
-start = time.time()
-while True:
-    ret, frame = capture.read()
-    # Bail out when the video file ends
-    if not ret:
-        break
+if __name__ == "__main__":
+    args = parse_arguments()
+    video_name = args.__dict__['video_name']
+    format = args.__dict__['format']
 
-    # Save each frame of the video to a list
-    frame_count += 1
-    frames.append(frame)
-    print('frame_count :{0}'.format(frame_count))
-    if len(frames) == batch_size:
-        results = model.detect(frames, verbose=0)
-        print('Predicted')
-        for i, item in enumerate(zip(frames, results)):
-            frame = item[0]
-            r = item[1]
-            frame, jsonContent = display_instances(
-                frame, r['rois'], r['masks'], r['class_ids'], class_names, r['scores']
-            )
-            saveLabels(frame_count, jsonContent)
-            name = 'frame{0}.jpg'.format(frame_count + i - batch_size)
-            name = os.path.join(VIDEO_SAVE_DIR, name)
-            cv2.imwrite(name, frame)
-            print('writing to file:{0}'.format(name))
-        # Clear the frames array to start the next batch
-        frames = []
+    video_save_dir = '/Users/filipdabrowski/Documents/git/Comparer/mask_RCNN/' + video_name
+    video_dir = '/Users/filipdabrowski/Documents/video/' + video_name
+    json_save_dir = video_save_dir + '/boxes'
+    time_path = video_save_dir + '/time'
 
-capture.release()
-endTime = time.time() - start
-saveTime(endTime)
-# Directory of images to run detection on
+    batch_size = 1
+    capture = cv2.VideoCapture(video_dir + '.' + format)
+    try:
+        if not os.path.exists(video_save_dir):
+            os.makedirs(video_save_dir)
+    except OSError:
+        print('Error: Creating directory of data')
+    frames = []
+    frame_count = 0
+    # these 2 lines can be removed if you dont have a 1080p camera.
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    fps = capture.get(cv2.CAP_PROP_FPS)
 
-images = list(glob.iglob(os.path.join(VIDEO_SAVE_DIR, '*.*')))
-# Sort the images by integer index
-images = sorted(images, key=lambda x: float(os.path.split(x)[1][:-3]))
+    start = time.time()
+    while True:
+        ret, frame = capture.read()
+        # Bail out when the video file ends
+        if not ret:
+            break
 
-outvid = os.path.join('', "out.mp4")
-make_video(outvid, images, fps=fps)
+        # Save each frame of the video to a list
+        frame_count += 1
+        frames.append(frame)
+        print('frame_count :{0}'.format(frame_count))
+        if len(frames) == batch_size:
+            results = model.detect(frames, verbose=0)
+            print('Predicted')
+            for i, item in enumerate(zip(frames, results)):
+                frame = item[0]
+                r = item[1]
+                frame, jsonContent = display_instances(
+                    frame, r['rois'], r['masks'], r['class_ids'], class_names, r['scores']
+                )
+                saveLabels(frame_count, jsonContent)
+                name = 'frame{0}.jpg'.format(frame_count + i - batch_size)
+                name = os.path.join(video_save_dir, name)
+                cv2.imwrite(name, frame)
+                print('writing to file:{0}'.format(name))
+            # Clear the frames array to start the next batch
+            frames = []
+
+    capture.release()
+    endTime = time.time() - start
+    saveTime(endTime)
+    # Directory of images to run detection on
+
+    images = list(glob.iglob(os.path.join(video_save_dir, '*.*')))
+    # Sort the images by integer index
+    images = sorted(images, key=lambda x: float(os.path.split(x)[1][:-3]))
+
+    outvid = os.path.join('', "out.mp4")
+    make_video(outvid, images, fps=fps)
